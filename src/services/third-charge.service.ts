@@ -1,4 +1,3 @@
-// src/services/third-charge.service.ts
 import {pool} from '../db';
 import {DateTime} from 'luxon';
 import Stripe from 'stripe';

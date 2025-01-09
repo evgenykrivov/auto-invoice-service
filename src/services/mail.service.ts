@@ -1,4 +1,3 @@
-// src/services/mail.service.ts
 import {google} from 'googleapis';
 import dotenv from 'dotenv';
 
@@ -11,9 +10,6 @@ interface SendMailParams {
 }
 
 export async function sendGmailLetter(params: SendMailParams) {
-    // Допустим, мы храним JSON ключ сервис-аккаунта в переменной окружения
-    // GOOGLE_SERVICE_ACCOUNT_JSON_BASE64 (base64-encoded JSON).
-    // Или берем из файла.
     const base64json = process.env.GSA_JSON_BASE64;
     if (!base64json) {
         throw new Error('No GOOGLE_SERVICE_ACCOUNT_JSON_BASE64 in env');
@@ -22,19 +18,17 @@ export async function sendGmailLetter(params: SendMailParams) {
     const rawJson = Buffer.from(base64json, 'base64').toString('utf-8');
     const credentials = JSON.parse(rawJson);
 
-    // JWT аутентификация
     const jwtClient = new google.auth.JWT({
         email: credentials.client_email,
         key: credentials.private_key,
         scopes: ['https://www.googleapis.com/auth/gmail.send'],
-        // subject: при необходимости, почта от чьего имени отправлять
+        subject: 'support@mynalabs.ai'
     });
 
     await jwtClient.authorize();
 
     const gmail = google.gmail({version: 'v1', auth: jwtClient});
 
-    // Сформируем "raw" письмо в base64url
     const raw = makeRawEmail({
         from: 'ChaChat <support@chachat.app>',
         to: params.to,
@@ -42,13 +36,12 @@ export async function sendGmailLetter(params: SendMailParams) {
         html: params.html,
     });
 
-    // Отправляем
-    await gmail.users.messages.send({
+    /*await gmail.users.messages.send({
         userId: 'me',
         requestBody: {
             raw,
         },
-    });
+    });*/
 }
 
 function makeRawEmail(opts: {
