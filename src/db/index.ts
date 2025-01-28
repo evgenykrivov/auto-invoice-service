@@ -6,9 +6,15 @@ const {Pool} = pg;
 dotenv.config();
 
 export const pool = new Pool({
-    host: process.env.PG_HOST,
-    port: Number(process.env.PG_PORT ?? 5432),
-    user: process.env.PG_USER,
-    password: process.env.PG_PASSWORD,
-    database: process.env.PG_DATABASE,
+    host: process.env.PGHOST,
+    port: Number(process.env.PGPORT ?? 5432),
+    user: process.env.PGUSER,
+    password: process.env.PGPASSWORD,
+    database: process.env.PGDATABASE,
+});
+
+// Добавим обработчик ошибок подключения
+pool.on('error', (err) => {
+    console.error('Unexpected error on idle client', err);
+    process.exit(-1);
 });

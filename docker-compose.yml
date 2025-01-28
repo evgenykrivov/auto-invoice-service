@@ -9,15 +9,66 @@ services:
       - POSTGRES_DB=mydb
     ports:
       - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U myuser -d mydb"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  migrations:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - SERVICE_TYPE=migrations
+      - PGHOST=db
+      - PGPORT=5432
+      - PGUSER=myuser
+      - PGPASSWORD=mypass
+      - PGDATABASE=mydb
+    command: yarn migrate:up
 
   auto-invoice-service:
     build: .
     depends_on:
-      - db
+      migrations:
+        condition: service_completed_successfully
     environment:
-      PGHOST: db
-      PGUSER: myuser
-      PGPASSWORD: mypass
-      PGDATABASE: mydb
+      - SERVICE_TYPE=app
+      - PGHOST=db
+      - PGPORT=5432
+      - PGUSER=myuser
+      - PGPASSWORD=mypass
+      - PGDATABASE=mydb
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
+      - GSA_JSON_BASE64=${GSA_JSON_BASE64}
+      - TEST_EMAIL=${TEST_EMAIL}
+      - NODE_ENV=${NODE_ENV}
     ports:
       - "3000:3000"
+    restart: unless-stopped
+
+  cron:
+    build: .
+    depends_on:
+      migrations:
+        condition: service_completed_successfully
+    environment:
+      - SERVICE_TYPE=cron
+      - PGHOST=db
+      - PGPORT=5432
+      - PGUSER=myuser
+      - PGPASSWORD=mypass
+      - PGDATABASE=mydb
+      - STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
+      - GSA_JSON_BASE64=${GSA_JSON_BASE64}
+      - TEST_EMAIL=${TEST_EMAIL}
+      - NODE_ENV=${NODE_ENV}
+    volumes:
+      - /var/log/auto-invoice:/var/log
+
+volumes:
+  postgres_data:

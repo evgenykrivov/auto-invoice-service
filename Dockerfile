@@ -1,15 +1,30 @@
-FROM node:18-alpine
+FROM node:20-alpine
 
 WORKDIR /app
 
-# Копируем package*.json
+# Устанавливаем необходимые пакеты
+RUN apk add --no-cache netcat-openbsd dcron tzdata
+
+# Копируем package*.json и yarn.lock
 COPY package*.json ./
+COPY yarn.lock ./
 
 RUN yarn install
 
-# Копируем исходники
+# Копируем миграции отдельно
+COPY migrations ./migrations/
+COPY database.json ./
+
+# Копируем остальные исходники
 COPY . .
 
-RUN yarn build  # если используешь tsc
+RUN yarn build
 
-CMD ["node", "dist/index.js"]
+# Создаем лог-файл для cron
+RUN touch /var/log/cron.log
+
+# Добавляем скрипт для запуска
+COPY scripts/start.sh /start.sh
+RUN chmod +x /start.sh
+
+CMD ["/start.sh"]

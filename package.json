@@ -6,7 +6,8 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "migrate:up": "node-pg-migrate up --migration-dir migrations --env dev -d database.json",
-    "migrate:down": "node-pg-migrate down --migration-dir migrations --env dev -d database.json"
+    "migrate:down": "node-pg-migrate down --migration-dir migrations --env dev -d database.json",
+    "sync-stripe": "ts-node src/scripts/sync-stripe-data.ts"
   },
   "dependencies": {
     "@types/luxon": "^3.4.2",
@@ -16,7 +17,8 @@
     "luxon": "^3.5.0",
     "pg": "^8.13.1",
     "stripe": "^17.5.0",
-    "ts": "^0.2.2"
+    "ts": "^0.2.2",
+    "glob": "^7.2.3"
   },
   "devDependencies": {
     "node-pg-migrate": "^7.9.0",

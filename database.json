@@ -1,11 +1,10 @@
 {
   "dev": {
     "driver": "pg",
-    "host": "db",
-    "port": 5432,
-    "database": "mydb",
-    "user": "myuser",
-    "password": "mypass",
-    "ssl": false
+    "host": {"ENV": "PGHOST"},
+    "port": {"ENV": "PGPORT"},
+    "database": {"ENV": "PGDATABASE"},
+    "user": {"ENV": "PGUSER"},
+    "password": {"ENV": "PGPASSWORD"}
   }
 }
