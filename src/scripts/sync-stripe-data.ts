@@ -13,7 +13,6 @@ export async function syncStripeData() {
     try {
         console.log('Starting Stripe data sync...');
         
-        // Сначала получим список активных подписок с email
         console.log('Fetching active subscriptions...');
         let activeSubscriptions = new Set<string>();
         let hasMoreSubs = true;
@@ -21,7 +20,7 @@ export async function syncStripeData() {
 
         while (hasMoreSubs) {
             const subscriptions = await stripe.subscriptions.list({
-                status: 'active',  // Только активные подписки
+                status: 'active',
                 limit: 100,
                 starting_after: startingAfterSub,
                 expand: ['data.customer']
@@ -29,7 +28,6 @@ export async function syncStripeData() {
 
             for (const sub of subscriptions.data) {
                 const customer = sub.customer as Stripe.Customer;
-                // Проверяем наличие email
                 if (customer && 'email' in customer && customer.email) {
                     activeSubscriptions.add(sub.id);
                 }
@@ -39,16 +37,14 @@ export async function syncStripeData() {
             if (subscriptions.data.length > 0) {
                 startingAfterSub = subscriptions.data[subscriptions.data.length - 1].id;
             }
-            console.log(`Found ${activeSubscriptions.size} active subscriptions with email so far...`);
         }
 
-        console.log(`Total active subscriptions with email: ${activeSubscriptions.size}`);
+        console.log(`Found ${activeSubscriptions.size} active subscriptions with email`);
 
-        // Теперь получаем платежи только для этих подписок
         const startTime = Math.floor(DateTime.now().minus({days: 45}).toSeconds());
-        let totalCharges = 0;
         let hasMore = true;
         let startingAfter: string | undefined;
+        let totalCharges = 0;
 
         while (hasMore) {
             const charges = await stripe.charges.list({
@@ -58,11 +54,6 @@ export async function syncStripeData() {
                 expand: ['data.invoice']
             });
 
-            console.log(`Got batch of ${charges.data.length} charges, filtering...`);
-            
-            const subscriptionCharges = new Map<string, Stripe.Charge[]>();
-            let relevantChargesInBatch = 0;
-            
             for (const charge of charges.data) {
                 if (charge.status !== 'succeeded') continue;
                 if (!charge.invoice) continue;
@@ -71,52 +62,39 @@ export async function syncStripeData() {
                 const subscriptionId = typeof invoice.subscription === 'string' 
                     ? invoice.subscription 
                     : invoice.subscription?.id;
-                
-                // Пропускаем платежи не из активных подписок с email
+
                 if (!subscriptionId || !activeSubscriptions.has(subscriptionId)) continue;
 
-                relevantChargesInBatch++;
+                const isFirstCharge = !await pool.query(`
+                    SELECT 1 FROM analytics.stripe_charges 
+                    WHERE subscription_id = $1 AND created < $2
+                    LIMIT 1
+                `, [subscriptionId, charge.created]).then(r => r.rows.length > 0);
 
-                if (!subscriptionCharges.has(subscriptionId)) {
-                    subscriptionCharges.set(subscriptionId, []);
-                }
-                subscriptionCharges.get(subscriptionId)!.push(charge);
+                await pool.query(`
+                    INSERT INTO analytics.stripe_charges 
+                    (subscription_id, stripe_user_id, price_name, created, is_first_user_charge)
+                    VALUES ($1, $2, $3, to_timestamp($4), $5)
+                    ON CONFLICT (subscription_id, created) DO UPDATE 
+                    SET is_first_user_charge = $5,
+                        price_name = $3
+                `, [
+                    subscriptionId,
+                    charge.customer,
+                    charge.description || 'Unknown',
+                    charge.created,
+                    isFirstCharge
+                ]);
             }
 
-            // Сохраняем только релевантные платежи
-            for (const [subscriptionId, charges] of subscriptionCharges.entries()) {
-                charges.sort((a, b) => a.created - b.created);
-                
-                for (let i = 0; i < charges.length; i++) {
-                    const charge = charges[i];
-                    const isFirstCharge = i === 0;
-
-                    await pool.query(`
-                        INSERT INTO analytics.stripe_charges 
-                        (subscription_id, stripe_user_id, price_name, created, is_first_user_charge)
-                        VALUES ($1, $2, $3, to_timestamp($4), $5)
-                        ON CONFLICT (subscription_id, created) DO UPDATE 
-                        SET is_first_user_charge = $5,
-                            price_name = $3
-                    `, [
-                        subscriptionId,
-                        charge.customer,
-                        charge.description || 'Unknown',
-                        charge.created,
-                        isFirstCharge
-                    ]);
-                }
-            }
-
-            totalCharges += relevantChargesInBatch;
+            totalCharges += charges.data.length;
             hasMore = charges.has_more;
             
             if (charges.data.length > 0) {
                 startingAfter = charges.data[charges.data.length - 1].id;
             }
 
-            console.log(`Processed batch: ${relevantChargesInBatch} relevant out of ${charges.data.length} total charges`);
-            console.log(`Total relevant charges so far: ${totalCharges}`);
+            console.log(`Processed ${totalCharges} relevant charges so far...`);
         }
 
         console.log(`Successfully synced all ${totalCharges} relevant charges from Stripe`);
@@ -126,7 +104,6 @@ export async function syncStripeData() {
     }
 }
 
-// Запускаем только если файл запущен напрямую
 if (require.main === module) {
     syncStripeData()
         .then(() => process.exit(0))

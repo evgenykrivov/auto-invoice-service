@@ -1,6 +1,6 @@
 import {getUpcomingInvoices, getUsersBeforeThirdCharge} from './services/third-charge.service';
 import {sendGmailLetter} from './services/mail.service';
-import {alreadySentEmail, logEmailSent} from './services/email-log.service';
+import {getThirdPaymentEmailTemplate} from './templates/third-payment-email';
 import dotenv from 'dotenv';
 import {syncStripeData} from './scripts/sync-stripe-data';
 
@@ -17,32 +17,42 @@ const TEST_EMAILS = [
 
 async function main() {
     try {
-        // Сначала синхронизируем данные из Stripe
         await syncStripeData();
 
-        // Находим пользователей с 2 платежами
-        const usersWithTwoCharges = await getUsersBeforeThirdCharge();
+        const users = await getUsersBeforeThirdCharge();
         console.log('\n=== Found users for third charge notification ===');
-        console.log('Total users found:', usersWithTwoCharges.length);
+        console.log('Total users found:', users.length);
 
-        // Проверяем у кого скоро третий платеж
-        const upcomingInvoices = await getUpcomingInvoices(usersWithTwoCharges);
+        const upcomingInvoices = await getUpcomingInvoices(users);
         
-        console.log('\n=== Users that would receive emails ===');
+        console.log('\n=== Sending emails ===');
         for (const [subscriptionId, data] of Object.entries(upcomingInvoices)) {
-            console.log(`\nSubscription: ${subscriptionId}`);
-            console.log(`Customer: ${data.stripe_user_id}`);
+            console.log(`\nProcessing subscription: ${subscriptionId}`);
             console.log(`Email: ${data.email}`);
-            console.log(`Last charge: ${data.last_charge_date}`);
-            console.log(`Next payment: ${data.next_payment_date} ${data.payment_time} (in ${data.hours_until_payment}h)`);
-            console.log(`Amount: $${(data.total / 100).toFixed(2)}`);
-            console.log(`Plan: ${data.plan}`);
+            console.log(`Next payment: ${data.next_payment_date}`);
+
+            try {
+                const htmlContent = getThirdPaymentEmailTemplate({
+                    total: data.total,
+                    plan: data.plan,
+                    next_payment_date: data.next_payment_date,
+                    user_id: data.stripe_user_id
+                });
+
+                await sendGmailLetter({
+                    to: data.email,
+                    subject: 'Your third payment is coming up',
+                    html: htmlContent
+                });
+                console.log('✓ Email sent successfully');
+            } catch (error) {
+                console.error('✗ Failed to send email:', error);
+            }
         }
 
         console.log('\n=== Summary ===');
-        console.log('Total users found:', usersWithTwoCharges.length);
-        console.log('Total emails that would be sent:', Object.keys(upcomingInvoices).length);
-        console.log('Mode: DRY RUN (no emails sent)');
+        console.log('Total users found:', users.length);
+        console.log('Total emails sent:', Object.keys(upcomingInvoices).length);
 
     } catch (error) {
         console.error('Error:', error);
@@ -50,7 +60,5 @@ async function main() {
     }
 }
 
-main();
-
-// И каждые 12 часов
 setInterval(main, 12 * 60 * 60 * 1000);
+main();
